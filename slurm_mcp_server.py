@@ -3,12 +3,15 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional
 
 SQUEUE_FORMAT_JOB_STATUS = "%.18i %.9T %.100j"
@@ -160,6 +163,12 @@ class SlurmMCPServer:
             raise ValueError("job_id must be numeric")
 
     def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(request, dict):
+            return {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32600, "message": "Invalid Request"},
+            }
         req_id = request.get("id")
         method = request.get("method")
         params = request.get("params", {})
@@ -196,8 +205,7 @@ class SlurmMCPServer:
             }
 
 
-def main() -> None:
-    server = SlurmMCPServer()
+def _run_stdio(server: SlurmMCPServer) -> None:
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -214,6 +222,98 @@ def main() -> None:
             continue
         response = server.handle_request(request)
         print(json.dumps(response), flush=True)
+
+
+def create_http_handler(server: SlurmMCPServer) -> type[BaseHTTPRequestHandler]:
+    class MCPHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if self.path != "/health":
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            payload = json.dumps({"status": "ok"}).encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_POST(self) -> None:
+            if self.path != "/mcp":
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            try:
+                content_length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                content_length = 0
+            raw = self.rfile.read(content_length)
+            try:
+                request = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32700, "message": f"Invalid JSON: {exc}"},
+                }
+                return self._write_json(HTTPStatus.BAD_REQUEST, response)
+
+            response = server.handle_request(request)
+            self._write_json(HTTPStatus.OK, response)
+
+        def _write_json(self, status: HTTPStatus, body: Dict[str, Any]) -> None:
+            payload = json.dumps(body).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, format: str, *args: Any) -> None:
+            # Keep HTTP logs on stderr so stdout remains clean for MCP stdio mode.
+            sys.stderr.write(f"{self.address_string()} - - [{self.log_date_time_string()}] {format % args}\n")
+
+    return MCPHandler
+
+
+def _run_http(server: SlurmMCPServer, host: str, port: int) -> None:
+    handler = create_http_handler(server)
+    with ThreadingHTTPServer((host, port), handler) as httpd:
+        print(
+            f"slurm-mcp HTTP server listening on http://{host}:{httpd.server_port}/mcp",
+            file=sys.stderr,
+            flush=True,
+        )
+        httpd.serve_forever()
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Slurm MCP server")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default=os.environ.get("SLURM_MCP_TRANSPORT", "stdio"),
+        help="Transport mode: stdio (default) or http",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("SLURM_MCP_HOST", "127.0.0.1"),
+        help="Bind host for HTTP transport",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("SLURM_MCP_PORT", "8000")),
+        help="Bind port for HTTP transport",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = _parse_args()
+    server = SlurmMCPServer()
+    if args.transport == "http":
+        _run_http(server, host=args.host, port=args.port)
+        return
+    _run_stdio(server)
 
 
 if __name__ == "__main__":

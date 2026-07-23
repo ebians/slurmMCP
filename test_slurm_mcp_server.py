@@ -1,9 +1,13 @@
+import http.client
+import json
 import os
 import tempfile
+import threading
 import unittest
+from http.server import ThreadingHTTPServer
 from unittest.mock import patch
 
-from slurm_mcp_server import SlurmMCPServer
+from slurm_mcp_server import SlurmMCPServer, create_http_handler
 
 
 class SlurmMCPServerTests(unittest.TestCase):
@@ -94,6 +98,66 @@ class SlurmMCPServerTests(unittest.TestCase):
         )
         self.assertIn("error", response)
         self.assertIn("Unknown tool", response["error"]["message"])
+
+    def test_http_initialize(self):
+        handler = create_http_handler(self.server)
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        worker = threading.Thread(target=httpd.serve_forever)
+        worker.start()
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5)
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {},
+            }
+            conn.request(
+                "POST",
+                "/mcp",
+                body=json.dumps(payload),
+                headers={"Content-Type": "application/json"},
+            )
+            response = conn.getresponse()
+            body = json.loads(response.read().decode("utf-8"))
+            self.assertEqual(response.status, 200)
+            self.assertIn("result", body)
+            self.assertEqual(body["result"]["serverInfo"]["name"], "slurm-mcp")
+            conn.close()
+        finally:
+            httpd.shutdown()
+            worker.join(timeout=5)
+            httpd.server_close()
+
+    def test_http_unknown_tool_error(self):
+        handler = create_http_handler(self.server)
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        worker = threading.Thread(target=httpd.serve_forever)
+        worker.start()
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5)
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "missing", "arguments": {}},
+            }
+            conn.request(
+                "POST",
+                "/mcp",
+                body=json.dumps(payload),
+                headers={"Content-Type": "application/json"},
+            )
+            response = conn.getresponse()
+            body = json.loads(response.read().decode("utf-8"))
+            self.assertEqual(response.status, 200)
+            self.assertIn("error", body)
+            self.assertEqual(body["error"]["code"], -32602)
+            conn.close()
+        finally:
+            httpd.shutdown()
+            worker.join(timeout=5)
+            httpd.server_close()
 
 
 if __name__ == "__main__":
