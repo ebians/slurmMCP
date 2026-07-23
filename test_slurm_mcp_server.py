@@ -22,6 +22,13 @@ class SlurmMCPServerTests(unittest.TestCase):
         self.assertIn("#SBATCH --nodes=2", result["script"])
         self.assertIn("python run.py", result["script"])
 
+    def test_suggest_job_script_normalizes_job_name(self):
+        result = self.server.suggest_job_script(
+            job_name="demo   job@@name",
+            command="echo ok",
+        )
+        self.assertIn("#SBATCH --job-name=demo-job-name", result["script"])
+
     @patch("slurm_mcp_server.subprocess.run")
     def test_submit_job_parses_job_id(self, run_mock):
         run_mock.return_value.stdout = "Submitted batch job 12345\n"
@@ -43,10 +50,8 @@ class SlurmMCPServerTests(unittest.TestCase):
             with patch("slurm_mcp_server.tempfile.mkstemp", return_value=(fd, temp_path)):
                 self.server.submit_job(script_content="#!/bin/bash\necho hi\n")
         finally:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
+            with self.assertRaises(OSError):
+                os.write(fd, b"x")
         self.assertFalse(os.path.exists(temp_path))
 
     @patch("slurm_mcp_server.subprocess.run")
@@ -71,6 +76,10 @@ class SlurmMCPServerTests(unittest.TestCase):
         result = self.server.cancel_job("123")
         self.assertTrue(result["cancelled"])
         self.assertEqual(result["job_id"], "123")
+
+    def test_job_id_must_be_numeric(self):
+        with self.assertRaises(ValueError):
+            self.server.job_status("12;rm -rf /")
 
     def test_handle_request_unknown_tool(self):
         response = self.server.handle_request(

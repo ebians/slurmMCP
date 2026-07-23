@@ -33,7 +33,7 @@ class SlurmMCPServer:
     ) -> Dict[str, str]:
         if not job_name or not command:
             raise ValueError("job_name and command are required")
-        clean_name = re.sub(r"[^a-zA-Z0-9._-]", "-", job_name)
+        clean_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", job_name).strip("-")
         script = (
             "#!/bin/bash\n"
             f"#SBATCH --job-name={clean_name}\n"
@@ -85,11 +85,13 @@ class SlurmMCPServer:
             }
         finally:
             if cleanup_path and os.path.exists(cleanup_path):
-                os.remove(cleanup_path)
+                try:
+                    os.remove(cleanup_path)
+                except OSError:
+                    pass
 
     def job_status(self, job_id: str) -> Dict[str, str]:
-        if not job_id:
-            raise ValueError("job_id is required")
+        self._validate_job_id(job_id)
         result = subprocess.run(
             ["squeue", "--jobs", job_id, "--noheader", "--format", "%.18i %.9T %.100j"],
             check=False,
@@ -111,8 +113,7 @@ class SlurmMCPServer:
         return {"queue": result.stdout.strip()}
 
     def cancel_job(self, job_id: str) -> Dict[str, Any]:
-        if not job_id:
-            raise ValueError("job_id is required")
+        self._validate_job_id(job_id)
         result = subprocess.run(
             ["scancel", job_id],
             check=False,
@@ -148,6 +149,11 @@ class SlurmMCPServer:
                 "description": "Cancel a Slurm job with scancel.",
             },
         ]
+
+    @staticmethod
+    def _validate_job_id(job_id: str) -> None:
+        if not re.fullmatch(r"\d+", str(job_id or "")):
+            raise ValueError("job_id must be numeric")
 
     def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         req_id = request.get("id")
