@@ -57,13 +57,13 @@ class SlurmMCPServer:
 
         cleanup_path: Optional[str] = None
         if script_content:
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".sh", delete=False, encoding="utf-8"
-            ) as tmp:
-                tmp.write(script_content)
-                cleanup_path = tmp.name
-                script_path = tmp.name
-            os.chmod(script_path, 0o700)
+            fd, tmp_path = tempfile.mkstemp(suffix=".sh", text=True)
+            cleanup_path = tmp_path
+            script_path = tmp_path
+            try:
+                os.write(fd, script_content.encode("utf-8"))
+            finally:
+                os.close(fd)
 
         try:
             result = subprocess.run(
@@ -72,7 +72,7 @@ class SlurmMCPServer:
                 capture_output=True,
                 text=True,
             )
-            output = (result.stdout or result.stderr).strip()
+            output = result.stdout.strip()
             match = re.search(r"Submitted batch job (\d+)", output)
             return {
                 "submitted": True,
@@ -168,7 +168,7 @@ class SlurmMCPServer:
                 raise ValueError(f"Unsupported method: {method}")
 
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
-        except Exception as exc:  # noqa: BLE001
+        except (ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,

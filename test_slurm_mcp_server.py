@@ -17,6 +17,7 @@ class SlurmMCPServerTests(unittest.TestCase):
         )
         self.assertIn("#SBATCH --job-name=demo-job", result["script"])
         self.assertIn("#SBATCH --partition=gpu", result["script"])
+        self.assertIn("#SBATCH --nodes=2", result["script"])
         self.assertIn("python run.py", result["script"])
 
     @patch("slurm_mcp_server.subprocess.run")
