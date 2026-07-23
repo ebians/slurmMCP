@@ -65,7 +65,7 @@ class SlurmMCPServer:
             finally:
                 os.close(fd)
         if not script_path:
-            raise ValueError("script path was not prepared")
+            raise ValueError("Internal error: script path resolution failed")
 
         try:
             result = subprocess.run(
