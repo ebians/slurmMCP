@@ -64,6 +64,7 @@ class SlurmMCPServer:
             cleanup_path = tmp_path
             script_path = tmp_path
             try:
+                os.chmod(tmp_path, 0o600)
                 os.write(fd, script_content.encode("utf-8"))
             finally:
                 os.close(fd)
