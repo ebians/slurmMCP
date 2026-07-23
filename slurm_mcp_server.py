@@ -181,11 +181,17 @@ class SlurmMCPServer:
                 raise ValueError(f"Unsupported method: {method}")
 
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
-        except (ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
+        except (ValueError, TypeError, KeyError) as exc:
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
-                "error": {"code": -32000, "message": str(exc)},
+                "error": {"code": -32602, "message": str(exc)},
+            }
+        except subprocess.SubprocessError as exc:
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": -32001, "message": str(exc)},
             }
 
 

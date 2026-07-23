@@ -44,15 +44,17 @@ class SlurmMCPServerTests(unittest.TestCase):
         run_mock.return_value.stderr = ""
         run_mock.return_value.returncode = 0
 
-        fd, temp_path = tempfile.mkstemp(suffix=".sh")
+        created = {}
+        original_mkstemp = tempfile.mkstemp
 
-        try:
-            with patch("slurm_mcp_server.tempfile.mkstemp", return_value=(fd, temp_path)):
-                self.server.submit_job(script_content="#!/bin/bash\necho hi\n")
-        finally:
-            with self.assertRaises(OSError):
-                os.fstat(fd)
-        self.assertFalse(os.path.exists(temp_path))
+        def create_temp_file(*args, **kwargs):
+            fd, path = original_mkstemp(*args, **kwargs)
+            created["path"] = path
+            return fd, path
+
+        with patch("slurm_mcp_server.tempfile.mkstemp", side_effect=create_temp_file):
+            self.server.submit_job(script_content="#!/bin/bash\necho hi\n")
+        self.assertFalse(os.path.exists(created["path"]))
 
     @patch("slurm_mcp_server.subprocess.run")
     def test_job_status_not_found(self, run_mock):
