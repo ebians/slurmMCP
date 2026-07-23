@@ -11,6 +11,9 @@ import sys
 import tempfile
 from typing import Any, Dict, List, Optional
 
+SQUEUE_FORMAT_JOB_STATUS = "%.18i %.9T %.100j"
+SQUEUE_FORMAT_QUEUE = "%.18i %.9T %.100j %.8u"
+
 
 class SlurmMCPServer:
     def __init__(self) -> None:
@@ -93,7 +96,7 @@ class SlurmMCPServer:
     def job_status(self, job_id: str) -> Dict[str, str]:
         self._validate_job_id(job_id)
         result = subprocess.run(
-            ["squeue", "--jobs", job_id, "--noheader", "--format", "%.18i %.9T %.100j"],
+            ["squeue", "--jobs", job_id, "--noheader", "--format", SQUEUE_FORMAT_JOB_STATUS],
             check=False,
             capture_output=True,
             text=True,
@@ -106,7 +109,7 @@ class SlurmMCPServer:
         return {"job_id": job_id, "status": status, "raw": output}
 
     def list_queue(self, user: Optional[str] = None) -> Dict[str, str]:
-        cmd = ["squeue", "--noheader", "--format", "%.18i %.9T %.100j %.8u"]
+        cmd = ["squeue", "--noheader", "--format", SQUEUE_FORMAT_QUEUE]
         if user:
             cmd.extend(["--user", user])
         result = subprocess.run(cmd, check=False, capture_output=True, text=True)
@@ -152,7 +155,7 @@ class SlurmMCPServer:
 
     @staticmethod
     def _validate_job_id(job_id: str) -> None:
-        if not re.fullmatch(r"\d+", str(job_id or "")):
+        if not re.fullmatch(r"\d+", job_id):
             raise ValueError("job_id must be numeric")
 
     def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:

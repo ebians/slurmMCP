@@ -19,3 +19,7 @@ python slurm_mcp_server.py
 ```bash
 python -m unittest -v
 ```
+
+## セキュリティ注意点
+
+- `submit_job` で `script_content` を渡した場合、投入用の一時ファイルは `mkstemp` (0600) で作成され、投入後に削除されます。

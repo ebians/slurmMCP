@@ -51,7 +51,7 @@ class SlurmMCPServerTests(unittest.TestCase):
                 self.server.submit_job(script_content="#!/bin/bash\necho hi\n")
         finally:
             with self.assertRaises(OSError):
-                os.write(fd, b"x")
+                os.fstat(fd)
         self.assertFalse(os.path.exists(temp_path))
 
     @patch("slurm_mcp_server.subprocess.run")
