@@ -57,13 +57,15 @@ class SlurmMCPServer:
 
         cleanup_path: Optional[str] = None
         if script_content:
-            fd, tmp_path = tempfile.mkstemp(suffix=".sh", text=True)
+            fd, tmp_path = tempfile.mkstemp(suffix=".sh")
             cleanup_path = tmp_path
             script_path = tmp_path
             try:
                 os.write(fd, script_content.encode("utf-8"))
             finally:
                 os.close(fd)
+        if not script_path:
+            raise ValueError("script path was not prepared")
 
         try:
             result = subprocess.run(

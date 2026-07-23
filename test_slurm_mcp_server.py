@@ -39,8 +39,14 @@ class SlurmMCPServerTests(unittest.TestCase):
 
         fd, temp_path = tempfile.mkstemp(suffix=".sh")
 
-        with patch("slurm_mcp_server.tempfile.mkstemp", return_value=(fd, temp_path)):
-            self.server.submit_job(script_content="#!/bin/bash\necho hi\n")
+        try:
+            with patch("slurm_mcp_server.tempfile.mkstemp", return_value=(fd, temp_path)):
+                self.server.submit_job(script_content="#!/bin/bash\necho hi\n")
+        finally:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
         self.assertFalse(os.path.exists(temp_path))
 
     @patch("slurm_mcp_server.subprocess.run")
