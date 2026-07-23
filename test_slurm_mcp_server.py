@@ -1,3 +1,5 @@
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -30,12 +32,39 @@ class SlurmMCPServerTests(unittest.TestCase):
         self.assertEqual(result["job_id"], "12345")
 
     @patch("slurm_mcp_server.subprocess.run")
+    def test_submit_job_cleans_temporary_file(self, run_mock):
+        run_mock.return_value.stdout = "Submitted batch job 12345\n"
+        run_mock.return_value.stderr = ""
+        run_mock.return_value.returncode = 0
+
+        fd, temp_path = tempfile.mkstemp(suffix=".sh")
+
+        with patch("slurm_mcp_server.tempfile.mkstemp", return_value=(fd, temp_path)):
+            self.server.submit_job(script_content="#!/bin/bash\necho hi\n")
+        self.assertFalse(os.path.exists(temp_path))
+
+    @patch("slurm_mcp_server.subprocess.run")
     def test_job_status_not_found(self, run_mock):
         run_mock.return_value.stdout = ""
         run_mock.return_value.stderr = ""
         run_mock.return_value.returncode = 0
         result = self.server.job_status("42")
         self.assertEqual(result["status"], "NOT_FOUND")
+
+    @patch("slurm_mcp_server.subprocess.run")
+    def test_list_queue(self, run_mock):
+        run_mock.return_value.stdout = "123 RUNNING demo user\n"
+        run_mock.return_value.returncode = 0
+        result = self.server.list_queue(user="user")
+        self.assertIn("RUNNING", result["queue"])
+
+    @patch("slurm_mcp_server.subprocess.run")
+    def test_cancel_job(self, run_mock):
+        run_mock.return_value.stderr = ""
+        run_mock.return_value.returncode = 0
+        result = self.server.cancel_job("123")
+        self.assertTrue(result["cancelled"])
+        self.assertEqual(result["job_id"], "123")
 
     def test_handle_request_unknown_tool(self):
         response = self.server.handle_request(

@@ -68,16 +68,18 @@ class SlurmMCPServer:
         try:
             result = subprocess.run(
                 ["sbatch", script_path],
-                check=True,
+                check=False,
                 capture_output=True,
                 text=True,
             )
             output = result.stdout.strip()
+            error = result.stderr.strip()
             match = re.search(r"Submitted batch job (\d+)", output)
             return {
-                "submitted": True,
+                "submitted": result.returncode == 0 and match is not None,
                 "job_id": match.group(1) if match else None,
                 "output": output,
+                "stderr": error,
             }
         finally:
             if cleanup_path and os.path.exists(cleanup_path):
